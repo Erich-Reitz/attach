@@ -26,44 +26,75 @@ type attachmentDetails struct {
 	Message  string
 }
 
-func attachMessageToFile(file, message string) error {
-	// check if file exists
-	if _, err := os.Stat(file); os.IsNotExist(err) {
+func userSuppliedFileExists(filepath string) error {
+	if _, err := os.Stat(filepath); os.IsNotExist(err) {
 		return err
 	}
 
-	// get full path of file
-	filePath, err := filepath.Abs(file)
+	return nil
+}
+
+func getFullPathOfUserSuppliedFile(user_filepath string) (string, error) {
+	res, err := filepath.Abs(user_filepath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	info := attachmentDetails{filePath, message}
+	return res, nil
+}
 
-	attachments_file, err := os.OpenFile("./attachments.json", os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer attachments_file.Close()
+func getUserAttachments(file *os.File) ([]attachmentDetails, error) {
+
+	defer file.Close()
 	// read data from file
 	content, err := ioutil.ReadFile("./attachments.json")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var history []attachmentDetails
 	if len(content) != 0 {
 		err = json.Unmarshal(content, &history)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	history = append(history, info)
-	fmt.Println(history)
+	return history, nil
+}
+
+func mergeAttachments(attachments []attachmentDetails, newInfo attachmentDetails) ([]byte, error) {
+	attachments = append(attachments, newInfo)
+
 	// write to file
-	json_data, err := json.Marshal(history)
-	fmt.Println(string(json_data))
+	json_data, err := json.Marshal(attachments)
+	if err != nil {
+		return nil, err
+	}
+
+	return json_data, nil
+}
+
+func attachMessageToFile(file, message string) error {
+
+	if err := userSuppliedFileExists(file); err != nil {
+		return err
+	}
+
+	full_filepath, err := getFullPathOfUserSuppliedFile(file)
+	if err != nil {
+		return err
+	}
+
+	info := attachmentDetails{full_filepath, message}
+	attachments_file, err := os.OpenFile("./attachments.json", os.O_RDONLY, 0644)
+
+	history, err := getUserAttachments(attachments_file)
+	if err != nil {
+		return err
+	}
+
+	json_data, err := mergeAttachments(history, info)
 	if err != nil {
 		return err
 	}
