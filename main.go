@@ -8,9 +8,21 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
-func validateFlags(file, message string) error {
+func validateFlagsIfPrintSet(file, message string) error {
+	if file != "" || message != "" {
+		return fmt.Errorf("cannot use -p and -f or -m")
+	}
+	return nil 
+}
+
+func validateFlags(file, message string, shouldPrint bool) error{
+	if (shouldPrint) {
+		return validateFlagsIfPrintSet(file, message)
+	}
+
 	if len(file) == 0 {
 		return fmt.Errorf("File is required")
 	}
@@ -22,16 +34,17 @@ func validateFlags(file, message string) error {
 }
 
 type attachmentDetails struct {
-	FilePath string
-	Message  string
+	FilePath    string
+	Message     string
+	MessageTime string
 }
 
-func userSuppliedFileExists(filepath string) error {
+func fileExists(filepath string) bool {
 	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		return err
+		return false
 	}
 
-	return nil
+	return true
 }
 
 func getFullPathOfUserSuppliedFile(user_filepath string) (string, error) {
@@ -43,10 +56,11 @@ func getFullPathOfUserSuppliedFile(user_filepath string) (string, error) {
 	return res, nil
 }
 
-func getUserAttachments(file *os.File) ([]attachmentDetails, error) {
+func getUserAttachments() ([]attachmentDetails, error) {
+	if !fileExists("./attachments.json") {
+		return []attachmentDetails{}, nil
+	}
 
-	defer file.Close()
-	// read data from file
 	content, err := ioutil.ReadFile("./attachments.json")
 	if err != nil {
 		return nil, err
@@ -75,10 +89,14 @@ func mergeAttachments(attachments []attachmentDetails, newInfo attachmentDetails
 	return json_data, nil
 }
 
+func getCurrentTime() string {
+	return time.Now().Format("2006-01-02 15:04:05")
+}
+
 func attachMessageToFile(file, message string) error {
 
-	if err := userSuppliedFileExists(file); err != nil {
-		return err
+	if !fileExists(file) {
+		return fmt.Errorf("File %s does not exist", file)
 	}
 
 	full_filepath, err := getFullPathOfUserSuppliedFile(file)
@@ -86,10 +104,10 @@ func attachMessageToFile(file, message string) error {
 		return err
 	}
 
-	info := attachmentDetails{full_filepath, message}
-	attachments_file, err := os.OpenFile("./attachments.json", os.O_RDONLY, 0644)
+	currentTime := getCurrentTime()
+	info := attachmentDetails{full_filepath, message, currentTime}
 
-	history, err := getUserAttachments(attachments_file)
+	history, err := getUserAttachments()
 	if err != nil {
 		return err
 	}
@@ -98,6 +116,8 @@ func attachMessageToFile(file, message string) error {
 	if err != nil {
 		return err
 	}
+	attachments_file, err := os.OpenFile("./attachments.json", os.O_RDONLY|os.O_CREATE|os.O_WRONLY, 0644)
+	defer attachments_file.Close()
 
 	_, err = attachments_file.Write(json_data)
 	if err != nil {
@@ -111,25 +131,39 @@ func main() {
 	// initialize flags
 	var message string
 	var file string
+	var print bool
 
 	flag.StringVar(&message, "m", "", "Message to attach to file")
 	flag.StringVar(&file, "f", "", "File to attach to message")
+	flag.BoolVar(&print, "p", false, "Print the directory with messages attached to each file")
+	
 
 	flag.Parse()
 
 	// parse flags
-	err := validateFlags(file, message)
+	err := validateFlags(file, message, print) 
 	if err != nil {
-		fmt.Println("Usage: attach [-m message] [-f file]")
+		fmt.Println("Usage: attach [-m message] [-f file] [-p] print")
 		flag.PrintDefaults()
 		log.Fatal(err)
 	}
 
-	// attach message to file
-	err = attachMessageToFile(file, message)
-	if err != nil {
-		log.Fatal(err)
+	if print {
+		history, err := getUserAttachments()
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, info := range history {
+			fmt.Printf("%s: %s\n", info.FilePath, info.Message)
+		}
+	} else {
+		err := attachMessageToFile(file, message)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
+
+
 
 	return
 }
