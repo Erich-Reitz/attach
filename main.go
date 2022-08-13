@@ -15,11 +15,11 @@ func validateFlagsIfPrintSet(file, message string) error {
 	if file != "" || message != "" {
 		return fmt.Errorf("cannot use -p and -f or -m")
 	}
-	return nil 
+	return nil
 }
 
-func validateFlags(file, message string, shouldPrint bool) error{
-	if (shouldPrint) {
+func validateFlags(file, message string, shouldPrint bool) error {
+	if shouldPrint {
 		return validateFlagsIfPrintSet(file, message)
 	}
 
@@ -136,12 +136,11 @@ func main() {
 	flag.StringVar(&message, "m", "", "Message to attach to file")
 	flag.StringVar(&file, "f", "", "File to attach to message")
 	flag.BoolVar(&print, "p", false, "Print the directory with messages attached to each file")
-	
 
 	flag.Parse()
 
 	// parse flags
-	err := validateFlags(file, message, print) 
+	err := validateFlags(file, message, print)
 	if err != nil {
 		fmt.Println("Usage: attach [-m message] [-f file] [-p] print")
 		flag.PrintDefaults()
@@ -162,8 +161,6 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-
-
 
 	return
 }
