@@ -11,28 +11,6 @@ import (
 	"time"
 )
 
-func validateFlagsIfPrintSet(file, message string) error {
-	if file != "" || message != "" {
-		return fmt.Errorf("cannot use -p and -f or -m")
-	}
-	return nil
-}
-
-func validateFlags(file, message string, shouldPrint bool) error {
-	if shouldPrint {
-		return validateFlagsIfPrintSet(file, message)
-	}
-
-	if len(file) == 0 {
-		return fmt.Errorf("File is required")
-	}
-	if len(message) == 0 {
-		return fmt.Errorf("Message is required")
-	}
-
-	return nil
-}
-
 type attachmentDetails struct {
 	FilePath    string
 	Message     string
@@ -95,6 +73,14 @@ func getCurrentTime() string {
 
 func attachMessageToFile(file, message string) error {
 
+	if file == "" {
+		return fmt.Errorf("No file specified")
+	}
+
+	if message == "" {
+		return fmt.Errorf("No message specified")
+	}
+
 	if !fileExists(file) {
 		return fmt.Errorf("File %s does not exist", file)
 	}
@@ -127,39 +113,96 @@ func attachMessageToFile(file, message string) error {
 	return nil
 }
 
-func main() {
-	// initialize flags
-	var message string
-	var file string
-	var print bool
-
-	flag.StringVar(&message, "m", "", "Message to attach to file")
-	flag.StringVar(&file, "f", "", "File to attach to message")
-	flag.BoolVar(&print, "p", false, "Print the directory with messages attached to each file")
-
-	flag.Parse()
-
-	// parse flags
-	err := validateFlags(file, message, print)
-	if err != nil {
-		fmt.Println("Usage: attach [-m message] [-f file] [-p] print")
-		flag.PrintDefaults()
-		log.Fatal(err)
+func printFileWithAttachments(attachments []attachmentDetails, file string) error {
+	path, _ := filepath.Abs(file)
+	for _, attachment := range attachments {
+		if attachment.FilePath == path {
+			fmt.Printf("%s: %s\n", attachment.FilePath, attachment.Message)
+		}
 	}
 
-	if print {
-		history, err := getUserAttachments()
+	return nil
+}
+
+func printAllFilesWithAttachments(attachments []attachmentDetails) error {
+	for _, attachment := range attachments {
+		fmt.Printf("%s: %s\n", attachment.FilePath, attachment.Message)
+	}
+
+	return nil
+}
+
+func printAllFilesWithAttachmentsInCurrentDirectory(attachments []attachmentDetails) {
+	files, err := ioutil.ReadDir(".")
+	path, _ := filepath.Abs(".")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, file := range files {
+		printFileWithAttachments(attachments, filepath.Join(path, file.Name()))
+	}
+}
+
+func printAttachments(allFileAttachments bool, specificFile string) error {
+	history, err := getUserAttachments()
+	if err != nil {
+		return err
+	}
+
+	// both set
+	if allFileAttachments && specificFile != "" {
+		return fmt.Errorf("Cannot specify both -a and -f")
+	}
+
+	// neither set
+	if !allFileAttachments && specificFile == "" {
+		printAllFilesWithAttachmentsInCurrentDirectory(history)
+	}
+
+	// only -a set
+	if allFileAttachments {
+		printAllFilesWithAttachments(history)
+	}
+
+	// only -f set
+	if specificFile != "" {
+		printFileWithAttachments(history, specificFile)
+	}
+
+	return nil
+}
+
+func main() {
+	attach := flag.NewFlagSet("", flag.ExitOnError)
+	attachFilename := attach.String("f", "", "File to attach message to")
+	message := attach.String("m", "", "Message to attach to file")
+
+	print := flag.NewFlagSet("-p", flag.ExitOnError)
+	printAll := print.Bool("a", false, "Print all attachments")
+	printFilename := print.String("f", "", "Print all attachments with file")
+
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: attach (-a <attach> -f <file> && -m <message>) || (-p <print> -a <print all> | -f <file>)")
+		log.Fatal("No command specified")
+	}
+
+	switch os.Args[1] {
+	case "-a":
+		attach.Parse(os.Args[2:])
+		err := attachMessageToFile(*attachFilename, *message)
 		if err != nil {
 			log.Fatal(err)
 		}
-		for _, info := range history {
-			fmt.Printf("%s: %s\n", info.FilePath, info.Message)
-		}
-	} else {
-		err := attachMessageToFile(file, message)
+	case "-p":
+		print.Parse(os.Args[2:])
+		err := printAttachments(*printAll, *printFilename)
 		if err != nil {
 			log.Fatal(err)
 		}
+	default:
+		fmt.Println("Usage: attach (-a <attach> -f <file> && -m <message>) || (-p <print> -a <print all> | -f <file>)")
+		log.Fatal("Invalid command")
 	}
 
 	return
